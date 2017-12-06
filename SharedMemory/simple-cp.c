@@ -5,12 +5,14 @@
 #include <getopt.h>
 #include <errno.h>
 #include <string.h>
+#include <pthread.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <time.h>
 
 // include user headers
@@ -22,6 +24,7 @@
 #define DEFAULT_BUFFER_NUMBER 8 // default buffer number
 
 #define MAX_INT_ARGUMENT_LENGTH 12 // max integer arument length
+#define REFRESH_TIME_INTERVAL 100 // minimal time interval(micro seconds) to update progress bar
 
 // global variables
 extern const char  * __progname; // gcc defined as substitute for argv[0]
@@ -34,6 +37,7 @@ int buffer_number = DEFAULT_BUFFER_NUMBER; // buffer number
 int semid = -1; // semaphore id
 int shmid = -1; // rinb buffer(shared memory) id
 char * source_file = NULL; // source file name
+off_t source_file_size = 0; // source file size
 char * dest_file = NULL; // dest file name
 int type = 1; // default type is semaphore implementation
 
@@ -48,6 +52,8 @@ void initialize(void);
 void process(void);
 
 void error_handler(int sig);
+
+void * print_progress(void * argument);
 
 // fork wrapper
 pid_t Fork(void) {
@@ -94,6 +100,15 @@ void validation(void) {
 
 // initialize procedure
 void initialize(void) {
+    // get the size of source file
+    struct stat source_file_stat;
+    if (lstat(source_file, &source_file_stat) == -1) {
+        printf("lstat failed: %s.\n", strerror(errno));
+        if (verbose_flag) printf("%s: failed to get size of input file.\n", __progname);
+        exit(-1);
+    }
+    source_file_size = source_file_stat.st_size;
+
     // use ftok to create ipc_key used for interprocess communication
     if ((ipc_key = ftok(__progname, 'c')) == -1) {
         printf("ftok failed: %s.\n", strerror(errno));
@@ -143,6 +158,17 @@ void process(void) {
         exit(-1);
     }
     if (verbose_flag) printf("%s: get process created with process id %d.\n", __progname, getpid);
+    
+    // create a new thread to print progress bar
+    // ONLY shows progress bar in non-verbose mode
+    struct RingBuffer * ring_buffer = NULL;
+    pthread_t progress_thread;
+    if (!verbose_flag) {
+        // attach shared ring_buffer
+        ring_buffer = attach_ring_buffer(shmid);
+        // create thread to print progress bar
+        pthread_create(&progress_thread, NULL, print_progress, (void *)ring_buffer); 
+    }
 
     // wait for all child processes
     // if one child process terminated abnormally, then clean and exit
@@ -166,9 +192,17 @@ void process(void) {
         }
     }
 
+    if (!verbose_flag) {
+        // wait for the progress thread to join
+        pthread_join(progress_thread, NULL);
+        // deattach shared ring_buffer
+        deattach_ring_buffer(ring_buffer);
+    }
+
     //end timing
     clock_gettime(CLOCK_MONOTONIC, &end);
-    printf("%s: copy process finished in %.3f seconds.\n", __progname, (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0);
+    double duration = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
+    printf("%lu bytes data transferred in %.3f seconds, speed is %.3f MB/s.\n", source_file_size, duration, source_file_size / duration / 1024 / 1024);
 }
 
 void error_handler(int sig) {
@@ -180,6 +214,50 @@ void error_handler(int sig) {
     signal(sig, SIG_DFL);
     raise(sig);
 }
+
+void * print_progress(void * argument) {
+    // acquire shared ring buffer from argument
+    struct RingBuffer * ring_buffer = (struct RingBuffer *)argument;
+
+    size_t transferred_size; // transferred file size
+    double percent; // complete percentage
+
+    struct winsize window_size; // window size (contains rows and columns)
+    int columns; // columns number excluding file name and []
+    int dest_file_name_length = strlen(dest_file); // file name length
+
+    while (transferred_size < source_file_size) {
+        // acquire transferred bytes from shared ring buffer
+        // and calculate complete percentage
+        transferred_size = number_of_bytes_transferred(ring_buffer);
+        percent = (double)transferred_size / source_file_size;
+        
+        // use ioctl to acquire console window's size
+        if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &window_size) == -1) {
+            printf("ioctl failed: %s.\n", strerror(errno));
+            if (verbose_flag) printf("%s: failed to get console window's size.\n", __progname);
+            exit(-1);
+        }
+        // calculate columns accordingly
+        columns = window_size.ws_col - dest_file_name_length - 4; // 3 = 1 space + 1 [ + 1 ] + 1 preserved
+
+        putchar('\r'); // move to the first of line
+        printf("%s :", dest_file); // print file name
+
+        putchar('['); // print [
+        for (int count = 0 ; count < columns ; ++count) {
+            // print # or space
+            char out_char = (count < columns * percent) ? '#' : ' ';
+            putchar(out_char);
+        }
+        putchar(']'); // print ]
+
+        fflush(stdout); // flush stdout explictly
+    
+        usleep(REFRESH_TIME_INTERVAL); // micro-second sleep
+    }
+    return NULL;
+}       
 
 // program entry
 int main(int argc, char * argv[]) {

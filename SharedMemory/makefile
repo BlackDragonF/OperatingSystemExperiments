@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Werror -DRETRY_LOOP_IMPLEMENTATION
+CFLAGS = -Wall -Werror
 LDLIBS = -lpthread
 
 HEADERS = $(shell find ./ -name "*.h")
@@ -19,3 +19,4 @@ $(TARGET): %: %.o semaphore.o ring-buffer.o
 
 clean:
 		rm -f $(OBJECTS)
+		rm -f $(TARGET)

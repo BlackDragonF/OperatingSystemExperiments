@@ -129,6 +129,8 @@ void consume(struct RingBuffer * ring_buffer, int * size, void * buffer) {
     memcpy(buffer, entry->bytes, *size);
     entry->size = 0;
     if (verbose_flag) printf("%s: %d bytes data consumed from buffer %d.\n", __progname, *size, (ring_buffer->out % buffer_number));
+    // update total_size
+    ring_buffer->total_size += *size;
     // modity out and clean size
     ring_buffer->out = ring_buffer->out + 1;
 }
@@ -142,3 +144,9 @@ void delete_ring_buffer(int shmid) {
     // unnecessary to add printf for cleanup function
     shmctl(shmid, IPC_RMID, NULL);
 }
+
+size_t number_of_bytes_transferred(struct RingBuffer * ring_buffer) {
+    // return the number of bytes transferred(total_size)
+    return ring_buffer->total_size; 
+}
+

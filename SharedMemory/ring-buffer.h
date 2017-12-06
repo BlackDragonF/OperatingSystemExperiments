@@ -20,6 +20,7 @@
 struct RingBuffer {
     int in;
     int out;
+    size_t total_size;
 };
 
 struct BufferEntry {
@@ -39,5 +40,8 @@ void deattach_ring_buffer(struct RingBuffer * ring_buffer);
 // produce and consume
 void produce(struct RingBuffer * ring_buffer, int size, void * buffer);
 void consume(struct RingBuffer * ring_buffer, int * size, void * buffer);
+
+// get the number of bytes transferred
+size_t number_of_bytes_transferred(struct RingBuffer * ring_buffer);
 
 #endif
