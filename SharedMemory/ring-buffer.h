@@ -5,10 +5,10 @@
 
 // shared memory generally structs below:
 //
-//  <---RingBuffer---> <-------BufferEntry0-------> <-------
-// +--------+---------+--------+-------------------+--------+--
-// |   in   |   out   |  size  |       bytes       |  size  |...
-// +--------+---------+--------+-------------------+--------+--
+//  <--------RingBuffer-------> <-------BufferEntry0-------> <-------
+// +--------+---------+--------+--------+-------------------+--------+--
+// |   in   |   out   |  size  |  size  |       bytes       |  size  |...
+// +--------+---------+--------+--------+-------------------+--------+--
 //
 // RingBuffer contains two BufferEntry pointers in/out
 // BufferEntry contains size and bytes, where size indicates actual bytes stored in buffer
