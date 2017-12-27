@@ -81,7 +81,7 @@ int main(void) {
     }
 
     /* create threads */
-    if ((pthread_create(&compute_thread, NULL, compute, NULL) == -1) || (pthread_create(&compute_thread, NULL, print, NULL) == -1)) {
+    if ((pthread_create(&compute_thread, NULL, compute, NULL) == -1) || (pthread_create(&print_thread, NULL, print, NULL) == -1)) {
         printf("pthread_create failed: cannot create threads, %s\n", strerror(errno));
         exit(-1);
     }
